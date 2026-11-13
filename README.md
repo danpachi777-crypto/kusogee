@@ -8,6 +8,10 @@ Blenderで作った温泉宿を一人称視点で探索する、物語付きの�
 
 GitHubから取得した場合は [Godot 4.7.2](https://godotengine.org/download/windows/) でこのフォルダの `project.godot` を開き、シーンを実行します。`tools/` 内のGodot実行ファイル、生成キャッシュ、PC固有のショートカットはリポジトリに含めていません。
 
+## スマホ操作プレビュー
+
+このPCの `Play Mobile Preview.lnk` は、スマホ横画面に近い比率で第一章から開きます。タッチ用の画面ボタンはマウスでも押せます。通常のセーブデータを守るため、プレビューでの進行は保存されません。Godotを別のPCで使う場合は `godot --windowed --resolution 1170x540 --path . --script res://mobile_preview.gd` でも起動できます。これはWindowsでの操作確認であり、Android・iPhoneの実機版ではありません。
+
 ## 操作
 
 | 行動 | キーボードとマウス | タッチ画面 |
