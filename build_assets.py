@@ -57,6 +57,19 @@ def cube(name, loc, scale, material, bevel=0):
     obj.dimensions = scale
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
     obj.data.materials.append(material)
+    # Tile photographs by real-world size instead of stretching one image over a wall.
+    uv_layer = obj.data.uv_layers.active
+    for polygon in obj.data.polygons:
+        normal = polygon.normal
+        for loop_index in polygon.loop_indices:
+            vertex = obj.data.vertices[obj.data.loops[loop_index].vertex_index].co
+            if abs(normal.z) > 0.5:
+                u, v = vertex.x / 2.0, vertex.y / 2.0
+            elif abs(normal.x) > 0.5:
+                u, v = vertex.y / 2.0, vertex.z / 2.0
+            else:
+                u, v = vertex.x / 2.0, vertex.z / 2.0
+            uv_layer.data[loop_index].uv = (u, v)
     if bevel:
         mod = obj.modifiers.new("Soft edges", "BEVEL")
         mod.width = bevel
@@ -117,6 +130,9 @@ wood = mat("warm cedar", (0.34, 0.24, 0.14), roughness=0.8)
 wood_light = mat("aged cedar planks", (0.57, 0.43, 0.29), roughness=0.86, texture="wood_floor_worn")
 tile = mat("stone tile", (0.36, 0.44, 0.42), roughness=0.45, texture="floor_tiles_04")
 plaster = mat("warm plaster", (0.82, 0.75, 0.57))
+washi = plaster.node_tree.nodes.new("ShaderNodeTexImage")
+washi.image = bpy.data.images.load(str(TEXTURES / "washi_plaster.png"), check_existing=True)
+plaster.node_tree.links.new(washi.outputs["Color"], next(node for node in plaster.node_tree.nodes if node.type == "BSDF_PRINCIPLED").inputs["Base Color"])
 red = mat("women entrance curtain", (0.71, 0.20, 0.25))
 blue = mat("men entrance curtain", (0.15, 0.36, 0.57))
 cream = mat("paper lantern", (1.0, 0.79, 0.47), emission=0.45)
@@ -126,22 +142,38 @@ gold = mat("brass", (0.83, 0.56, 0.2), roughness=0.35)
 linen = mat("clean linen", (0.86, 0.83, 0.72), roughness=0.95)
 glass = mat("mirror glass", (0.63, 0.75, 0.78), roughness=0.08)
 charcoal = mat("dark slate", (0.13, 0.16, 0.17), roughness=0.65)
+warm_recess = mat("warm cove lighting", (1.0, 0.72, 0.37), roughness=1.0, emission=1.3)
 
 cube("stone floor", (0, 0, -0.15), (20, 24, 0.3), tile)
-cube("dark floor joints", (0, -5.2, 0.002), (19.9, 13.2, 0.015), charcoal)
+cube("dark floor joints", (0, 0, 0.002), (19.9, 23.7, 0.015), charcoal)
 for x in range(-9, 10, 2):
-    cube(f"floor plank {x}", (x, -5.2, 0.026), (1.985, 13.2, 0.03), wood_light)
+    cube(f"floor plank {x}", (x, 0, 0.026), (1.985, 23.7, 0.03), wood_light)
 for x in (-10, 10):
-    cube(f"side wall {x}", (x, 0, 1.5), (0.3, 24, 3), plaster)
+    cube(f"side wall {x}", (x, 0, 2.05), (0.3, 24, 4.1), plaster)
     cube(f"side baseboard {x}", (x * 0.982, 0, 0.18), (0.12, 24, 0.36), wood)
     for y in range(-10, 12, 4):
-        cube(f"wall pillar {x} {y}", (x * 0.981, y, 1.6), (0.18, 0.22, 3.2), wood)
-cube("front wall", (0, -12, 1.5), (20, 0.3, 3), plaster)
+        cube(f"wall pillar {x} {y}", (x * 0.981, y, 2.05), (0.18, 0.22, 4.1), wood_light, 0.025)
+    cube(f"side picture rail {x}", (x * 0.981, 0, 3.14), (0.13, 24, 0.1), wood)
+cube("front wall", (0, -12, 2.05), (20, 0.3, 4.1), plaster)
 for x, width in ((-8.5, 3), (0, 6), (8.5, 3)):
-    cube(f"rear wall {x}", (x, 11.7, 1.5), (width, 0.35, 3), plaster)
+    cube(f"rear wall {x}", (x, 11.7, 2.05), (width, 0.35, 4.1), plaster)
 for x in (-7, -3, 3, 7):
     cube(f"door post {x}", (x, 11.5, 1.4), (0.22, 0.5, 2.8), wood)
-cube("rear beam", (0, 11.5, 2.9), (20, 0.5, 0.28), wood)
+cube("rear beam", (0, 11.5, 3.92), (20, 0.5, 0.28), wood_light, 0.025)
+
+# A taller ceiling, timber coffers and warm coves make the room feel like a ryokan lounge.
+for y in range(-10, 12, 4):
+    cube(f"coffer crossbeam {y}", (0, y, 3.96), (19.6, 0.24, 0.24), wood_light, 0.025)
+for x in (-8.4, -4.2, 0, 4.2, 8.4):
+    cube(f"coffer long beam {x}", (x, 0, 3.99), (0.16, 23.3, 0.18), wood_light, 0.02)
+for x in (-8.8, 8.8):
+    cube(f"cove side {x}", (x, 0, 3.85), (0.11, 22.6, 0.035), warm_recess)
+for y in (-9.5, 8.8):
+    cube(f"cove end {y}", (0, y, 3.85), (17.5, 0.11, 0.035), warm_recess)
+for x, y in ((-4.5, -5), (0, -5), (4.5, -5), (-4.5, 3.5), (0, 3.5), (4.5, 3.5)):
+    cylinder("pendant cord", (x, y, 3.48), 0.015, 0.65, charcoal, 12)
+    cylinder("washi pendant", (x, y, 2.98), 0.26, 0.52, cream, 32)
+    cylinder("pendant rim", (x, y, 2.72), 0.27, 0.025, wood, 32)
 
 # The curtains mark the destination; the room beyond them is deliberately empty.
 for center, fabric, title in ((-5, blue, "MEN"), (5, red, "WOMEN")):
@@ -152,22 +184,24 @@ for center, fabric, title in ((-5, blue, "MEN"), (5, red, "WOMEN")):
     label(f"{title} letters", title, (center - 1.15, 11.1, 2.57), 0.32, cream)
     cube(f"{title} door mat", (center, 9.7, 0.04), (3.5, 2.4, 0.08), fabric)
 
-cube("reception counter", (0, -4, 0.8), (5.5, 1.1, 1.6), wood, 0.08)
-cube("reception counter top", (0, -4, 1.65), (5.9, 1.3, 0.12), wood_light, 0.06)
-for x in (-2.2, -1.6, 1.6, 2.2):
-    cube(f"counter joinery {x}", (x, -4.62, 0.83), (0.06, 0.08, 1.5), gold)
-cube("service bell base", (2.05, -4.0, 1.74), (0.34, 0.34, 0.05), gold, 0.02)
-sphere("service bell", (2.05, -4.0, 1.89), 0.17, gold, 20, 12)
-cube("welcome sign", (0, -4.67, 1.02), (2.7, 0.06, 0.68), black, 0.02)
-label("welcome letters", "ONSEN", (-1.12, -4.74, 0.88), 0.38, cream)
+cube("reception counter", (4.4, -4.0, 0.56), (3.6, 1.05, 1.12), wood, 0.08)
+cube("reception counter top", (4.4, -4.0, 1.17), (3.9, 1.24, 0.11), wood_light, 0.06)
+for x in (2.9, 3.5, 5.3, 5.9):
+    cube(f"counter joinery {x}", (x, -4.55, 0.59), (0.055, 0.08, 1.02), gold)
+cube("service bell base", (5.7, -4.0, 1.27), (0.34, 0.34, 0.05), gold, 0.02)
+sphere("service bell", (5.7, -4.0, 1.41), 0.17, gold, 20, 12)
+cube("welcome sign", (4.4, -4.57, 0.67), (2.2, 0.06, 0.42), black, 0.02)
+label("welcome letters", "ONSEN", (3.53, -4.63, 0.60), 0.27, cream)
 
-for x, y, width in ((-3.5, 1.0, 3.0), (2.7, 4.2, 3.5)):
+for x, y, width in ((-6.8, 7.0, 2.4), (6.8, 6.0, 2.4)):
     cube(f"privacy screen {x}", (x, y, 1.05), (width, 0.22, 2.1), wood, 0.04)
     cube(f"privacy screen inset {x}", (x, y - 0.13, 1.1), (width - 0.25, 0.04, 1.5), plaster)
     for offset in (-0.35, 0.35):
         cube(f"screen lattice {x} {offset}", (x + offset * width, y - 0.18, 1.1), (0.055, 0.05, 1.5), wood)
     for height in (0.7, 1.45):
         cube(f"screen crossbar {x} {height}", (x, y - 0.18, height), (width - 0.25, 0.05, 0.05), wood)
+
+# Detailed lounge chairs and table are instanced as CC0 glTF assets in Godot.
 
 # Benches, towels, a changing mirror and woven baskets make the lobby read as a bathhouse.
 for x, y in ((-7.8, -1.8), (7.8, -1.8)):
@@ -183,13 +217,10 @@ cube("mirror stool", (-7.5, 2.0, 0.48), (0.8, 0.8, 0.96), wood_light, 0.07)
 for x, y in ((-6.7, 6.7), (6.7, 6.7)):
     cylinder("towel basket", (x, y, 0.42), 0.48, 0.83, wood, 16)
     cube("basket towel", (x, y, 0.87), (0.55, 0.55, 0.12), linen, 0.04)
-for x, y in ((-7.7, -8.7), (7.7, -8.7), (-8, 5), (8, 5)):
-    cylinder("plant pot", (x, y, 0.32), 0.43, 0.65, wood, 10)
-    sphere("leaf cluster", (x, y, 1.02), 0.67, green)
 for x, y in ((-7.6, -2.0), (7.6, -2.0), (-7.6, 8.8), (7.6, 8.8)):
-    cylinder("lantern stand", (x, y, 0.8), 0.08, 1.6, black)
-    sphere("lantern glow", (x, y, 1.8), 0.36, cream)
-    cylinder("lantern cap", (x, y, 2.18), 0.42, 0.1, black)
+    cube("lantern stand", (x, y, 0.79), (0.09, 0.09, 1.58), charcoal, 0.01)
+    cube("washi floor lantern", (x, y, 1.67), (0.54, 0.54, 0.65), cream, 0.025)
+    cube("lantern cap", (x, y, 2.02), (0.6, 0.6, 0.08), wood, 0.015)
 
 bpy.ops.object.light_add(type="AREA", location=(0, -2, 10))
 bpy.context.object.name = "lobby warm light"
@@ -203,9 +234,6 @@ bpy.context.scene.render.engine = "BLENDER_EEVEE"
 bpy.context.scene.render.resolution_x = 1200
 bpy.context.scene.render.resolution_y = 900
 bpy.context.scene.render.resolution_percentage = 100
-for area in bpy.context.screen.areas:
-    if area.type == "CONSOLE":
-        area.type = "VIEW_3D"
 bpy.ops.wm.save_as_mainfile(filepath=str(SOURCE / "onsen_lobby.blend"))
 bpy.ops.export_scene.gltf(filepath=str(ASSETS / "onsen_lobby.glb"), export_format="GLB", export_cameras=False, export_lights=False)
 

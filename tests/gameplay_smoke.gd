@@ -33,7 +33,7 @@ func _run() -> void:
 	game._interact()
 	assert(game.chapter == 3 and game.clues == 2, "Archive chapter failed")
 	game.story_open = false
-	game.player.position = Vector3(0, 0.05, 5.4)
+	game.player.position = game.RECEPTION_POINT + Vector3.UP * 0.05
 	game._check_goal()
 	assert(game.chapter == 4 and not game.finished, "Return chapter failed")
 	print("GAMEPLAY_SMOKE_OK")

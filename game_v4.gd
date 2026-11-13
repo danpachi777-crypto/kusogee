@@ -7,12 +7,14 @@ const CROUCH_SPEED := 1.35
 const GUARD_SPEED := 1.45
 const GUARD_ACCEL := 4.2
 const SAVE_PATH := "user://onsen_story_save.json"
+const HUMAN_ASSET_PATH := "res://assets/people/"
+const RECEPTION_POINT := Vector3(4.4, 0, 5.4)
 
 var player: CharacterBody3D
 var player_visual: Dictionary
 var camera: Camera3D
 var camera_yaw := 0.0
-var camera_pitch := 0.0
+var camera_pitch := -0.22
 var mouse_look := false
 var guards: Array[Dictionary] = []
 var suspicion := 0.0
@@ -63,11 +65,29 @@ var rain_footprint_timer := 0.0
 var ending_text := ""
 var choice_context := ""
 var story_queue: Array[String] = []
+var human_textures: Dictionary = {}
+var washi_texture: Texture2D
+var wood_texture: Texture2D
+var wood_normal: Texture2D
+var move_touch_index := -1
+var look_touch_index := -1
+var look_touch_last := Vector2.ZERO
+var move_touch_origin := Vector2.ZERO
+var move_touch_vector := Vector2.ZERO
+var move_pad_base: Panel
+var move_pad_knob: Panel
+var mouse_swipe_side := -1
+var mouse_swipe_origin := Vector2.ZERO
+const TOUCH_RADIUS := 86.0
 
 
 func _ready() -> void:
 	if ResourceLoader.exists(FONT_PATH):
 		font = load(FONT_PATH)
+	_load_human_textures()
+	washi_texture = load("res://assets/textures/washi_plaster.png")
+	wood_texture = load("res://assets/textures/wood_floor_worn_diff_1k.jpg")
+	wood_normal = load("res://assets/textures/wood_floor_worn_nor_gl_1k.jpg")
 	_build_world()
 	_build_annex()
 	_build_followup_regions()
@@ -99,6 +119,7 @@ func _physics_process(delta: float) -> void:
 		_animate_visual(guard["visual"], (guard["velocity"] as Vector3).length(), delta, guard["head_turn"])
 	for actor in campaign_actors:
 		_animate_visual(actor["visual"], 0.0, delta, 0.0)
+	_update_person_sprites()
 	_update_camera(delta)
 	_check_goal()
 	_update_ui()
@@ -121,10 +142,104 @@ func _unhandled_input(event: InputEvent) -> void:
 		mouse_look = event.pressed
 	if event is InputEventMouseMotion and mouse_look:
 		_orbit(event.relative.x, event.relative.y)
-	if event is InputEventScreenDrag:
-		var width := get_viewport().get_visible_rect().size.x
-		if event.position.x > width * 0.55 and event.position.y < get_viewport().get_visible_rect().size.y - 150:
-			_orbit(event.relative.x, event.relative.y)
+
+
+func _input(event: InputEvent) -> void:
+	if story_open:
+		return
+	if event is InputEventScreenTouch:
+		_handle_screen_touch(event)
+	elif event is InputEventScreenDrag:
+		_handle_screen_drag(event)
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		_handle_mouse_swipe_button(event)
+	elif event is InputEventMouseMotion and mouse_swipe_side != -1:
+		_handle_mouse_swipe_motion(event)
+
+
+func _handle_mouse_swipe_button(event: InputEventMouseButton) -> void:
+	if not event.pressed:
+		if mouse_swipe_side == 0:
+			move_touch_index = -1
+			move_touch_vector = Vector2.ZERO
+			_update_move_pad()
+		mouse_swipe_side = -1
+		return
+	var view := get_viewport().get_visible_rect().size
+	if event.position.x < view.x * 0.48 and event.position.y > view.y * 0.28:
+		mouse_swipe_side = 0
+		mouse_swipe_origin = event.position
+		move_touch_index = 0
+		move_touch_origin = event.position
+		move_touch_vector = Vector2.ZERO
+		_update_move_pad()
+	elif event.position.x >= view.x * 0.48 and event.position.y < view.y - 120.0:
+		mouse_swipe_side = 1
+		mouse_swipe_origin = event.position
+
+
+func _handle_mouse_swipe_motion(event: InputEventMouseMotion) -> void:
+	if mouse_swipe_side == 0:
+		var displacement := event.position - mouse_swipe_origin
+		move_touch_vector = Vector2(displacement.x, -displacement.y).limit_length(TOUCH_RADIUS) / TOUCH_RADIUS
+		_update_move_pad()
+	else:
+		var motion := event.relative.limit_length(56.0)
+		_orbit(motion.x, motion.y)
+
+
+func _handle_screen_touch(event: InputEventScreenTouch) -> void:
+	var view := get_viewport().get_visible_rect().size
+	if event.pressed:
+		if move_touch_index == -1 and event.position.x < view.x * 0.48 and event.position.y > view.y * 0.28:
+			move_touch_index = event.index
+			move_touch_origin = event.position
+			move_touch_vector = Vector2.ZERO
+			_update_move_pad()
+		elif look_touch_index == -1 and event.position.x >= view.x * 0.48 and event.position.y < view.y - 120.0:
+			look_touch_index = event.index
+			look_touch_last = event.position
+	else:
+		if event.index == move_touch_index:
+			move_touch_index = -1
+			move_touch_vector = Vector2.ZERO
+			_update_move_pad()
+		if event.index == look_touch_index:
+			look_touch_index = -1
+
+
+func _handle_screen_drag(event: InputEventScreenDrag) -> void:
+	if event.index == move_touch_index:
+		var displacement := event.position - move_touch_origin
+		move_touch_vector = Vector2(displacement.x, -displacement.y).limit_length(TOUCH_RADIUS) / TOUCH_RADIUS
+		_update_move_pad()
+	elif event.index == look_touch_index:
+		var motion := event.screen_relative
+		if motion.length() > 80.0:
+			motion = event.position - look_touch_last
+		look_touch_last = event.position
+		motion = motion.limit_length(56.0)
+		_orbit(motion.x, motion.y)
+
+
+func _update_move_pad() -> void:
+	if move_pad_base == null or move_pad_knob == null:
+		return
+	move_pad_base.visible = true
+	move_pad_knob.visible = true
+	if move_touch_index == -1:
+		move_pad_base.position = Vector2(58, 493)
+		move_pad_knob.position = Vector2(118, 553)
+		return
+	move_pad_base.position = move_touch_origin - Vector2(TOUCH_RADIUS, TOUCH_RADIUS)
+	move_pad_knob.position = move_touch_origin + Vector2(move_touch_vector.x, -move_touch_vector.y) * TOUCH_RADIUS - Vector2(26, 26)
+
+
+func _clear_touch_swipes() -> void:
+	move_touch_index = -1
+	look_touch_index = -1
+	move_touch_vector = Vector2.ZERO
+	_update_move_pad()
 
 
 func _orbit(dx: float, dy: float) -> void:
@@ -133,27 +248,32 @@ func _orbit(dx: float, dy: float) -> void:
 
 
 func _build_world() -> void:
-	add_child(load("res://assets/onsen_lobby.glb").instantiate())
+	var lobby: Node3D = load("res://assets/onsen_lobby.glb").instantiate()
+	for mesh: MeshInstance3D in lobby.find_children("*", "MeshInstance3D", true, false):
+		var object_name := str(mesh.name)
+		if object_name.begins_with("lounge ") or object_name.begins_with("table leg") or object_name.begins_with("tea cup"):
+			mesh.visible = false
+	add_child(lobby)
 	var environment := WorldEnvironment.new()
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
 	env.background_color = Color("142023")
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color("e7d3b4")
-	env.ambient_light_energy = 0.6
+	env.ambient_light_color = Color("e9e7e2")
+	env.ambient_light_energy = 0.58
 	environment.environment = env
 	add_child(environment)
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-58, -28, 0)
-	sun.light_color = Color("fff0d7")
-	sun.light_energy = 0.7
+	sun.light_color = Color("f8f2e8")
+	sun.light_energy = 0.52
 	sun.shadow_enabled = true
 	add_child(sun)
-	for point in [Vector3(-6.8, 3.1, 1.2), Vector3(6.8, 3.1, -4.7), Vector3(0, 3.1, -8.0)]:
+	for point in [Vector3(-6.8, 3.5, 1.2), Vector3(6.8, 3.5, -4.7), Vector3(0, 3.5, -8.0), Vector3(-4.5, 3.4, 4.5), Vector3(4.5, 3.4, 4.5)]:
 		var lamp := OmniLight3D.new()
 		lamp.position = point
 		lamp.light_color = Color("ffc883")
-		lamp.light_energy = 0.65
+		lamp.light_energy = 0.60
 		lamp.omni_range = 8.0
 		lamp.shadow_enabled = true
 		add_child(lamp)
@@ -168,13 +288,19 @@ func _build_world() -> void:
 	_block("front wall", Vector3(0, 1.5, 12), Vector3(20, 3, 0.3))
 	for item in [[-8.5, 3.0], [0.0, 6.0], [8.5, 3.0]]:
 		_block("rear wall", Vector3(item[0], 1.5, -11.7), Vector3(item[1], 3, 0.35))
-	_block("counter", Vector3(0, 0.85, 4), Vector3(5.5, 1.7, 1.1))
-	_block("screen A", Vector3(-3.5, 1.05, -1), Vector3(3, 2.1, 0.24))
-	_block("screen B", Vector3(2.7, 1.05, -4.2), Vector3(3.5, 2.1, 0.24))
+	_block("counter", Vector3(4.4, 0.56, 4), Vector3(3.6, 1.12, 1.05))
+	_block("screen A", Vector3(-6.8, 1.05, -7), Vector3(2.4, 2.1, 0.24))
+	_block("screen B", Vector3(6.8, 1.05, -6), Vector3(2.4, 2.1, 0.24))
+	_block("lounge table", Vector3(-5, 0.45, 3), Vector3(1.15, 0.9, 0.75))
+	for chair in [Vector3(-6.5, 0.49, 3), Vector3(-3.5, 0.49, 3), Vector3(-5, 0.49, 4.7)]:
+		_block("lounge chair", chair, Vector3(1.1, 0.98, 1.15))
+	_block("rear lounge table", Vector3(-5, 0.45, -3.5), Vector3(1.15, 0.9, 0.75))
+	for chair in [Vector3(-6.5, 0.49, -3.5), Vector3(-3.5, 0.49, -3.5), Vector3(-5, 0.49, -5.2)]:
+		_block("rear lounge chair", chair, Vector3(1.1, 0.98, 1.15))
 	for x in [-7.8, 7.8]:
 		_block("bench", Vector3(x, 0.45, 1.8), Vector3(2.5, 0.9, 0.7))
 	_block("mirror stool", Vector3(-7.5, 0.45, -2), Vector3(0.8, 0.9, 0.8))
-	_box_prop("cedar ceiling", Vector3(0, 3.08, 0), Vector3(19.8, 0.18, 23.5), Color("7d6042"))
+	_box_prop("cedar ceiling", Vector3(0, 4.17, 0), Vector3(19.8, 0.18, 23.5), Color("8d7458"))
 	# A small service passage makes the second chapter a playable place.
 	_box_prop("passage floor", Vector3(5, -0.13, -17.2), Vector3(4.0, 0.26, 10.5), Color("56615e"))
 	_box_prop("passage left wall", Vector3(2.85, 1.4, -17.2), Vector3(0.25, 2.8, 10.5), Color("aa987d"))
@@ -182,6 +308,9 @@ func _build_world() -> void:
 	_box_prop("passage end wall", Vector3(5, 1.4, -22.5), Vector3(4.5, 2.8, 0.25), Color("aa987d"))
 	_box_prop("archive cabinet", Vector3(5.9, 0.9, -19.9), Vector3(1.2, 1.8, 0.65), Color("614637"))
 	_box_prop("small desk", Vector3(3.8, 0.75, -16.0), Vector3(1.0, 0.14, 1.0), Color("866446"))
+	_add_lobby_windows()
+	_add_lobby_plants()
+	_add_lounge_furniture()
 	var passage_light := OmniLight3D.new()
 	passage_light.position = Vector3(5, 2.45, -17)
 	passage_light.light_color = Color("ffe0a4")
@@ -198,10 +327,83 @@ func _box_prop(name: String, at: Vector3, dimensions: Vector3, color: Color) -> 
 	mesh.mesh = box
 	var material := StandardMaterial3D.new()
 	material.albedo_color = color
+	if "wall" in name and name != "sealed wall":
+		material.albedo_color = Color.WHITE
+		material.albedo_texture = washi_texture
+		material.roughness = 0.92
+		material.uv1_scale = Vector3(maxf(1.0, maxf(dimensions.x, dimensions.z) / 3.0), 1.0, 1.0)
+	elif "floor" in name or "ceiling" in name:
+		if "ceiling" in name:
+			material.albedo_color = Color(0.87, 0.82, 0.75)
+		material.albedo_texture = wood_texture
+		material.normal_enabled = true
+		material.normal_texture = wood_normal
+		material.roughness = 0.73
+		material.uv1_scale = Vector3(maxf(1.0, dimensions.x / 3.0), maxf(1.0, dimensions.z / 3.0), 1.0)
 	mesh.material_override = material
 	mesh.position = at
 	add_child(mesh)
 	_block(name + " collision", at, dimensions)
+
+
+func _add_lobby_windows() -> void:
+	for window in [
+		{"x": 9.80, "z": 3.6, "texture": "garden_day.png", "yaw": -PI / 2.0},
+		{"x": 9.80, "z": -3.6, "texture": "garden_dusk.png", "yaw": -PI / 2.0},
+		{"x": -9.80, "z": -5.2, "texture": "onsen_garden_view.png", "yaw": PI / 2.0},
+	]:
+		var center: float = window["z"]
+		var side: float = window["x"]
+		var view := Sprite3D.new()
+		view.name = "Garden glazing"
+		view.texture = load("res://assets/textures/" + window["texture"])
+		view.pixel_size = 4.4 / float(view.texture.get_width())
+		view.position = Vector3(side, 2.0, center)
+		view.rotation.y = window["yaw"]
+		view.shaded = false
+		view.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(view)
+		var frame_x := side - signf(side) * 0.11
+		for edge_z in [center - 2.25, center, center + 2.25]:
+			_decor_box("dark cedar window mullion", Vector3(frame_x, 2.0, edge_z), Vector3(0.11, 2.7, 0.08), Color("34291e"))
+		for edge_y in [0.67, 3.33]:
+			_decor_box("dark cedar window rail", Vector3(frame_x, edge_y, center), Vector3(0.11, 0.09, 4.55), Color("34291e"))
+		_decor_box("stone window sill", Vector3(frame_x - signf(side) * 0.08, 0.67, center), Vector3(0.26, 0.07, 4.6), Color("7a7567"))
+
+
+func _add_lobby_plants() -> void:
+	var plant_texture: Texture2D = load("res://assets/people/lobby_maple.png")
+	for at in [Vector3(-8.3, 0, 8.5), Vector3(8.3, 0, 8.5), Vector3(-8.4, 0, -8.8)]:
+		var plant := Sprite3D.new()
+		plant.name = "Indoor maple"
+		plant.texture = plant_texture
+		plant.pixel_size = 1.65 / float(plant_texture.get_height())
+		plant.position = at + Vector3.UP * 0.825
+		plant.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+		plant.alpha_cut = SpriteBase3D.ALPHA_CUT_OPAQUE_PREPASS
+		plant.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(plant)
+
+
+func _add_lounge_furniture() -> void:
+	var chair_scene: PackedScene = load("res://assets/models/mid_century_lounge_chair/mid_century_lounge_chair_2k.gltf")
+	var table_scene: PackedScene = load("res://assets/models/chinese_tea_table/chinese_tea_table_2k.gltf")
+	for z in [3.0, -3.5]:
+		var table: Node3D = table_scene.instantiate()
+		table.name = "Photoreal tea table"
+		table.position = Vector3(-5, 0, z)
+		table.scale = Vector3.ONE * 1.2
+		add_child(table)
+		for item in [
+			{"at": Vector3(-6.5, 0, z), "yaw": -PI / 2.0},
+			{"at": Vector3(-3.5, 0, z), "yaw": PI / 2.0},
+			{"at": Vector3(-5, 0, z + 1.7), "yaw": 0.0},
+		]:
+			var chair: Node3D = chair_scene.instantiate()
+			chair.name = "Photoreal lounge chair"
+			chair.position = item["at"]
+			chair.rotation.y = item["yaw"]
+			add_child(chair)
 
 
 func _build_annex() -> void:
@@ -263,12 +465,23 @@ func _decor_box(name: String, at: Vector3, dimensions: Vector3, color: Color) ->
 
 
 func _add_story_actor(title: String, at: Vector3, yaw: float) -> void:
+	var actor := Node3D.new()
+	actor.name = title
+	actor.position = at
+	actor.rotation.y = yaw
+	add_child(actor)
 	var model: Node3D = load("res://assets/attendant.glb").instantiate()
-	model.name = title
-	model.position = at
-	model.rotation.y = yaw
-	add_child(model)
-	campaign_actors.append({"node": model, "visual": _visual_nodes(model)})
+	model.visible = false
+	actor.add_child(model)
+	var kind := "attendant_idle"
+	if title == "管理人":
+		kind = "caretaker"
+	elif title == "宿泊客":
+		kind = "guest" if campaign_actors.size() == 1 else "guest_man"
+	var sprite := _make_person_sprite(kind)
+	actor.add_child(sprite)
+	actor.add_child(_make_person_shadow())
+	campaign_actors.append({"node": actor, "visual": _visual_nodes(model), "sprite": sprite})
 
 
 func _build_followup_regions() -> void:
@@ -328,7 +541,7 @@ func _build_player() -> void:
 
 
 func _build_guards() -> void:
-	_add_guard(Vector3(5.8, 0, 3.0), Vector3(5.8, 0, -1.8))
+	_add_guard(Vector3(7.0, 0, 3.0), Vector3(7.0, 0, -1.8))
 	_add_guard(Vector3(-5.8, 0, -6.6), Vector3(5.8, 0, -6.6))
 	_add_guard(Vector3(35, 0, 2.0), Vector3(35, 0, -9.5))
 
@@ -339,10 +552,14 @@ func _add_guard(start: Vector3, end: Vector3) -> void:
 	actor.position = start
 	var model: Node3D = load("res://assets/attendant.glb").instantiate()
 	model.rotation.y = PI
+	model.visible = false
 	actor.add_child(model)
+	var sprite := _make_person_sprite("attendant_idle")
+	actor.add_child(sprite)
+	actor.add_child(_make_person_shadow())
 	add_child(actor)
 	guards.append({
-		"node": actor, "visual": _visual_nodes(model),
+		"node": actor, "visual": _visual_nodes(model), "sprite": sprite,
 		"a": start, "b": end, "to_b": true,
 		"velocity": Vector3.ZERO, "facing": (end - start).normalized(),
 		"pause": 0.0, "investigate": 0.0, "target": start,
@@ -355,6 +572,57 @@ func _visual_nodes(model: Node3D) -> Dictionary:
 	for part in ["left_hip", "right_hip", "left_knee", "right_knee", "left_shoulder", "right_shoulder", "head_joint"]:
 		result[part] = model.find_child(part, true, false)
 	return result
+
+
+func _load_human_textures() -> void:
+	for kind in ["attendant_idle", "attendant_walk", "attendant_back", "caretaker", "guest", "guest_man"]:
+		human_textures[kind] = load(HUMAN_ASSET_PATH + kind + ".png")
+
+
+func _make_person_sprite(kind: String) -> Sprite3D:
+	var sprite := Sprite3D.new()
+	sprite.name = "Photo person"
+	sprite.texture = human_textures[kind]
+	sprite.pixel_size = 1.82 / float(sprite.texture.get_height())
+	sprite.position.y = 0.91
+	sprite.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	sprite.alpha_cut = SpriteBase3D.ALPHA_CUT_OPAQUE_PREPASS
+	sprite.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return sprite
+
+
+func _make_person_shadow() -> MeshInstance3D:
+	var shadow := MeshInstance3D.new()
+	shadow.name = "Ground shadow"
+	var disc := CylinderMesh.new()
+	disc.top_radius = 0.32
+	disc.bottom_radius = 0.32
+	disc.height = 0.01
+	shadow.mesh = disc
+	var material := StandardMaterial3D.new()
+	material.albedo_color = Color(0.02, 0.02, 0.02, 0.27)
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	shadow.material_override = material
+	shadow.position.y = 0.03
+	return shadow
+
+
+func _update_person_sprites() -> void:
+	for guard in guards:
+		var sprite: Sprite3D = guard["sprite"]
+		var actor: Node3D = guard["node"]
+		var speed: float = (guard["velocity"] as Vector3).length()
+		var toward := player.global_position - actor.global_position
+		var facing: Vector3 = guard["facing"]
+		var face_visible := toward.length() < 0.01 or facing.dot(toward.normalized()) > -0.1
+		var kind := "attendant_back" if not face_visible else "attendant_walk" if speed > 0.25 else "attendant_idle"
+		sprite.texture = human_textures[kind]
+		sprite.position.y = 0.91 + absf(sin(elapsed * 5.5)) * minf(speed, 1.0) * 0.028
+		sprite.flip_h = speed > 0.25 and sin(elapsed * 5.5) < 0.0
+	for actor in campaign_actors:
+		var sprite: Sprite3D = actor["sprite"]
+		sprite.position.y = 0.91 + sin(elapsed * 1.2) * 0.007
 
 
 func _build_interactions() -> void:
@@ -501,7 +769,7 @@ func _animate_visual(visual: Dictionary, speed: float, delta: float, head_turn: 
 
 
 func _movement_input() -> Vector2:
-	var direction := Vector2.ZERO
+	var direction := move_touch_vector
 	if Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT) or touch["left"]:
 		direction.x -= 1
 	if Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT) or touch["right"]:
@@ -510,7 +778,7 @@ func _movement_input() -> Vector2:
 		direction.y += 1
 	if Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN) or touch["down"]:
 		direction.y -= 1
-	return direction.normalized()
+	return direction.limit_length(1.0)
 
 
 func _is_crouching() -> bool:
@@ -645,7 +913,7 @@ func _interact() -> void:
 	if finished:
 		return
 	var at := player.global_position
-	if at.distance_to(Vector3(0, 0, 5.4)) < 2.1 and not has_ticket:
+	if at.distance_to(RECEPTION_POINT) < 2.1 and not has_ticket:
 		has_ticket = true
 		suspicion = maxf(0.0, suspicion - 10.0)
 		_show_status("受付で入館札を受け取った。視線が少し和らぐ。")
@@ -714,7 +982,7 @@ func _check_goal() -> void:
 	if chapter == 1 and player.global_position.z < -11.15 and player.global_position.x > 3.3 and player.global_position.x < 6.7:
 		_advance_chapter(2)
 		return
-	if chapter == 3 and player.global_position.distance_to(Vector3(0, 0, 5.4)) < 2.1:
+	if chapter == 3 and player.global_position.distance_to(RECEPTION_POINT) < 2.1:
 		_advance_chapter(4)
 		return
 	if chapter >= 2:
@@ -877,7 +1145,7 @@ func _update_ui() -> void:
 		hint_label.text = ""
 		return
 	var at := player.global_position
-	if at.distance_to(Vector3(0, 0, 5.4)) < 2.1 and not has_ticket:
+	if at.distance_to(RECEPTION_POINT) < 2.1 and not has_ticket:
 		hint_label.text = "E / 行動: 受付で入館札を受け取る"
 	elif at.distance_to(Vector3(-7.4, 0, -2.0)) < 2.2 and not mirror_used:
 		hint_label.text = "E / 行動: 鏡で変装を整える"
@@ -1093,6 +1361,7 @@ func _show_story(words: String) -> void:
 
 func _display_story(words: String) -> void:
 	story_text.text = words
+	_clear_touch_swipes()
 	story_button.visible = true
 	for button in choice_buttons:
 		button.visible = false
@@ -1163,11 +1432,10 @@ func _build_ui_v3() -> void:
 	crosshair.offset_right = 8
 	crosshair.offset_top = -17
 	crosshair.offset_bottom = 17
-	_label(hud, "WASD 移動 / 右ドラッグ 見回す / E 調べる / Q 小銭 / B 深呼吸 / Tab 記録", Vector2(20, 217), 15)
-	_touch_hold(hud, "↑", "up", Vector2(104, 532), Vector2(70, 70))
-	_touch_hold(hud, "←", "left", Vector2(28, 608), Vector2(70, 70))
-	_touch_hold(hud, "↓", "down", Vector2(104, 608), Vector2(70, 70))
-	_touch_hold(hud, "→", "right", Vector2(180, 608), Vector2(70, 70))
+	_label(hud, "左側をスワイプ: 移動 / 右側をスワイプ: 見回す / PC: WASD・右ドラッグ", Vector2(20, 217), 15)
+	move_pad_base = _touch_pad(hud, 172, Color(0.87, 0.93, 0.91, 0.14), Color(0.8, 0.95, 0.92, 0.65))
+	move_pad_knob = _touch_pad(hud, 52, Color(0.75, 0.94, 0.9, 0.48), Color(0.8, 0.95, 0.92, 0.8))
+	_update_move_pad()
 	_touch_toggle(hud, "走る", Vector2(710, 608), "run")
 	_touch_toggle(hud, "しゃがむ", Vector2(800, 608), "crouch")
 	_touch_action(hud, "小銭", Vector2(890, 608), func(): _throw_coin())
@@ -1225,6 +1493,22 @@ func _build_ui_v3() -> void:
 	_apply_safe_area(hud)
 
 
+func _touch_pad(parent: Control, diameter: float, fill: Color, outline: Color) -> Panel:
+	var pad := Panel.new()
+	pad.custom_minimum_size = Vector2(diameter, diameter)
+	pad.size = Vector2(diameter, diameter)
+	pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var style := StyleBoxFlat.new()
+	style.bg_color = fill
+	style.border_color = outline
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(roundi(diameter * 0.5))
+	pad.add_theme_stylebox_override("panel", style)
+	pad.visible = false
+	parent.add_child(pad)
+	return pad
+
+
 func _update_ui_v3() -> void:
 	if meter == null:
 		return
@@ -1250,7 +1534,7 @@ func _update_ui_v3() -> void:
 		hint_label.text = "E / 調べる: " + str(campaign_point["title"])
 	elif not point.is_empty():
 		hint_label.text = "E / 調べる: " + str(point["title"])
-	elif chapter == 1 and player.global_position.distance_to(Vector3(0, 0, 5.4)) < 2.1 and not has_ticket:
+	elif chapter == 1 and player.global_position.distance_to(RECEPTION_POINT) < 2.1 and not has_ticket:
 		hint_label.text = "E / 調べる: 受付で入館札を受け取る"
 	elif chapter == 1 and player.global_position.distance_to(Vector3(-7.4, 0, -2.0)) < 2.2 and not mirror_used:
 		hint_label.text = "E / 調べる: 鏡で変装を整える"

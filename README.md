@@ -16,7 +16,7 @@ GitHubから取得した場合は [Godot 4.7.2](https://godotengine.org/download
 
 | 行動 | キーボードとマウス | タッチ画面 |
 | --- | --- | --- |
-| 移動 | WASD / 矢印 | 左下の方向ボタン |
+| 移動 | WASD / 矢印 | 左下をスワイプして仮想スティック操作 |
 | 見回す | 右ドラッグ | 画面右側をスワイプ |
 | 走る | Shift | 「走る」 |
 | しゃがむ | Ctrl | 「しゃがむ」 |
@@ -77,6 +77,8 @@ GitHubから取得した場合は [Godot 4.7.2](https://godotengine.org/download
 - `tests/campaign_smoke.gd`: 10案を通る正解ルートと移動の確認。
 - `tests/campaign_branch_smoke.gd`: 失敗と別の結末の確認。
 
-Godotの同じプロジェクトをAndroidとiPhone向けに使う設計です。Windowsでの試作動作は確認済みです。Android実機への書き出しにはGodotのエクスポートテンプレート、JDK、Android SDKが必要です。iPhone向けアプリの書き出しにはmacOS、Xcode、Appleの署名設定が必要です。スマホ実機での性能とタッチ操作は未確認です。
+Godotの同じプロジェクトをAndroidとiPhone向けに使う設計です。Windowsでの試作動作とWeb版の書き出しは確認済みです。Android実機への書き出しにはGodotのエクスポートテンプレート、JDK、Android SDKが必要です。iPhone向けアプリの書き出しにはmacOS、Xcode、Appleの署名設定が必要です。スマホ実機での性能とタッチ操作は未確認です。
 
-床と石材のテクスチャは [Poly Haven のCC0素材](https://polyhaven.com/license) を使用しています。日本語フォントは Noto Sans JP で、ライセンスは `assets/OFL.txt` にあります。人物の見た目と動きはまだ試作段階で、実写に近いモデルやモーションキャプチャ素材は未導入です。
+ロビーは [仙郷楼](https://senkyoro.co.jp/lobby.html)、[鬼怒川温泉ホテル](https://www.kinugawaonsenhotel.com/facilities/view.php?id=1)、[摩周](https://www.masyuu.co.jp/lobby-lounge/)、[ひびき野](https://www.j-hibikino.com/facilities/) の写真を参考に、木組みの天井、庭に面した窓、落ち着いたラウンジを独自に設計しました。参考写真そのものはゲームに含めていません。庭と和紙の画像、人物の写真風画像は新規生成素材です。
+
+床と石材のテクスチャ、[ラウンジチェア](https://polyhaven.com/a/mid_century_lounge_chair)、[茶卓](https://polyhaven.com/a/chinese_tea_table)は [Poly Haven のCC0素材](https://polyhaven.com/license) を使用しています。日本語フォントは Noto Sans JP で、ライセンスは `assets/OFL.txt` にあります。人物は写真風の平面スプライトを使用しており、立体的な人物モデルとモーションキャプチャは今後の課題です。
